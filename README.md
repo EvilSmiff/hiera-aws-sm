@@ -1,9 +1,5 @@
 
 # hiera_aws_sm
-[![Build Status](https://travis-ci.org/Accenture/hiera-aws-sm.svg?branch=master)](https://travis-ci.org/Accenture/hiera-aws-sm)
-[![Puppet Forge](https://img.shields.io/puppetforge/v/accenture/hiera_aws_sm.svg)](https://forge.puppet.com/accenture/hiera_aws_sm)
-
-
 
 #### Table of Contents
 
@@ -111,17 +107,6 @@ Author: David Hayes [d.hayes@accenture.com]
 See [LICENSE](LICENSE.md)
 
 ## Release Notes
-
-### Steps required to publish module
-
-```
-rake module:bump_commit:<patch|minor|full>
-rake module:tag
-git push --tags
-```
-
-Travis will detect tagged commits, will build them, and push as a new
-release to the PuppetForge.
 
 ## TBD
 

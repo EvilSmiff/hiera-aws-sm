@@ -5,9 +5,12 @@
   "summary": "Lookup secret values from AWS SecretsManager",
   "license": "Apache-2.0",
   "source": "https://github.com/Accenture/hiera-aws-sm",
+  "project_page": "https://github.com/Accenture/hiera-aws-sm",
+  "issues_url": "https://github.com/Accenture/hiera-aws-sm/issues",
   "dependencies": [
-
+  
   ],
+  "data_provider": null,
   "operatingsystem_support": [
     {
       "operatingsystem": "CentOS",

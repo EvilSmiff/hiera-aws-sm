@@ -21,6 +21,28 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
     param 'Puppet::LookupContext', :context
   end
 
+
+  # if set, file will be appended to with debug data
+  # $debug = "/tmp/hiera_aws_sm.log"
+
+  ################################################
+  #
+  # void debug_msg ( string txt )
+  #
+  # Used to dump debug messages if debug is set
+  #
+
+  def debug_msg(txt)
+    if $debug.is_a? String
+      File.open($debug, 'a') { |file| file.write(Time.now.strftime("%Y/%m/%d %H:%M") + " " + txt + "\n") }
+    end
+  end
+
+
+  ################################################
+
+
+
   ##
   # lookup_key
   #
@@ -95,24 +117,138 @@ Puppet::Functions.create_function(:hiera_aws_sm) do
   # into a Hash, it is returned, otherwise a String is returned.
   def get_secret(key, options, context)
     client_opts = {}
-    client_opts[:access_key_id] = options['aws_access_key'] if options.key?('aws_access_key')
-    client_opts[:secret_access_key] = options['aws_secret_key'] if options.key?('aws_secret_key')
-    client_opts[:region] = options['region'] if options.key?('region')
+    session_opts = {}
+    connfailed = false
 
-    secretsmanager = Aws::SecretsManager::Client.new(client_opts)
+    # begin
+      assume_role = options['assume_role'] if options.key?('assume_role')
+
+      context.explain { "[hiera-aws-sm] assume_role set to #{assume_role}" }
+      debug_msg("[hiera-aws-sm] assume_role set to #{assume_role}")
+
+      if assume_role == true
+
+        context.explain { "[hiera-aws-sm] performing connection and assuming role" }
+        debug_msg("[hiera-aws-sm] performing connection and assuming role")
+
+        # client_opts[:access_key_id] = options['aws_access_key'] if options.key?('aws_access_key')
+        # client_opts[:secret_access_key] = options['aws_secret_key'] if options.key?('aws_secret_key')
+        # client_opts[:region] = options['region'] if options.key?('region')
+        access_key_id = options['aws_access_key'] if options.key?('aws_access_key')
+        secret_access_key = options['aws_secret_key'] if options.key?('aws_secret_key')
+        region = options['region'] if options.key?('region')        
+        rolename = options['rolename_to_assume'] if options.key?('rolename_to_assume')
+        accountid = options['accountid_to_assume'] if options.key?('accountid_to_assume')
+        role_arn = "arn:aws:iam::#{accountid}:role/#{rolename}"
+
+        
+        context.explain { "[hiera-aws-sm] region set to #{region}" }
+        debug_msg("[hiera-aws-sm] region set to #{region}")
+
+        context.explain { "[hiera-aws-sm] role_arn set to #{role_arn}" }
+        debug_msg("[hiera-aws-sm] role_arn set to #{role_arn}" )
+
+        context.explain { "[hiera-aws-sm] access_key_id set to #{access_key_id}" }
+        debug_msg("[hiera-aws-sm] access_key_id set to #{access_key_id}" )
+        
+        context.explain { "[hiera-aws-sm] secret_access_key set to #{secret_access_key}" }
+        debug_msg("[hiera-aws-sm] secret_access_key set to #{secret_access_key}" )
+
+        # sts = Aws::STS::Client.new(client_opts)
+
+        # session_opts[:client] = sts
+        # session_opts[:role_arn] = role_arn
+        # session_opts[:role_session_name] = 'temp'
+
+        
+        # testtype = "Credentials"
+        # begin
+          
+        #   credentials = Aws::Credentials.new( 
+        #     access_key_id: access_key_id, 
+        #     secret_access_key: secret_access_key 
+        #   )
+
+        # rescue => error
+        #   context.explain { "[hiera-aws-sm] #{testtype} failed: #{error.message}" }
+        #   debug_msg("[hiera-aws-sm] #{testtype} failed: #{error.message}")
+        #   connfailed = true
+        # end
+
+        testtype = "STS Client Connection"
+        begin
+
+          sts = Aws::STS::Client.new(
+            region: region,
+            # credentials: credentials
+            access_key_id: access_key_id, 
+            secret_access_key: secret_access_key             
+          )
+
+        rescue => error
+          context.explain { "[hiera-aws-sm] #{testtype} failed: #{error.message}" }
+          debug_msg("[hiera-aws-sm] #{testtype} failed: #{error.message}")
+          connfailed = true
+        end
+
+        testtype = "AssumeRole"
+        begin
+
+          role_credentials = Aws::AssumeRoleCredentials.new(
+            client: sts,
+            role_arn: role_arn,
+            role_session_name: 'session-name'
+          )
+
+        rescue => error
+          context.explain { "[hiera-aws-sm] #{testtype} failed: #{error.message}" }
+          debug_msg("[hiera-aws-sm] #{testtype} failed: #{error.message}")
+          connfailed = true
+        end
+
+        testtype = "SecretsManager Client Connection"
+        begin
+
+          secretsmanager = Aws::SecretsManager::Client.new(
+            region: region,
+            credentials: role_credentials
+          )
+        
+        rescue => error
+          context.explain { "[hiera-aws-sm] #{testtype} failed: #{error.message}" }
+          debug_msg("[hiera-aws-sm] #{testtype} failed: #{error.message}")
+          connfailed = true
+        end
+      else
+
+        client_opts[:access_key_id] = options['aws_access_key'] if options.key?('aws_access_key')
+        client_opts[:secret_access_key] = options['aws_secret_key'] if options.key?('aws_secret_key')
+        client_opts[:region] = options['region'] if options.key?('region')
+
+        begin
+          secretsmanager = Aws::SecretsManager::Client.new(client_opts)
+        rescue => error
+          context.explain { "[hiera-aws-sm] Connection failed: #{error.message}" }
+          debug_msg("[hiera-aws-sm] Connection failed: #{error.message}")
+          connfailed = true
+        end
+      end
 
     response = nil
     secret = nil
 
-    context.explain { "[hiera-aws-sm] Looking up #{key}" }
-    begin
-      response = secretsmanager.get_secret_value(secret_id: key)
-    rescue Aws::SecretsManager::Errors::ResourceNotFoundException
-      context.explain { "[hiera-aws-sm] No data found for #{key}" }
-    rescue Aws::SecretsManager::Errors::UnrecognizedClientException
-      raise Puppet::DataBinding::LookupError, "[hiera-aws-sm] Skipping backend. No permission to access #{key}"
-    rescue Aws::SecretsManager::Errors::ServiceError => e
-      raise Puppet::DataBinding::LookupError, "[hiera-aws-sm] Skipping backend. Failed to lookup #{key} due to #{e.message}"
+    if connfailed != true
+      context.explain { "[hiera-aws-sm] Looking up #{key}" }
+      debug_msg("[hiera-aws-sm] Looking up #{key}")
+      begin
+        response = secretsmanager.get_secret_value(secret_id: key)
+      rescue Aws::SecretsManager::Errors::ResourceNotFoundException
+        context.explain { "[hiera-aws-sm] No data found for #{key}" }
+      rescue Aws::SecretsManager::Errors::UnrecognizedClientException
+        raise Puppet::DataBinding::LookupError, "[hiera-aws-sm] Skipping backend. No permission to access #{key}"
+      rescue Aws::SecretsManager::Errors::ServiceError => e
+        raise Puppet::DataBinding::LookupError, "[hiera-aws-sm] Skipping backend. Failed to lookup #{key} due to #{e.message}"
+      end
     end
 
     unless response.nil?
